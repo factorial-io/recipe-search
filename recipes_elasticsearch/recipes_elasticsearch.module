@@ -1,0 +1,216 @@
+<?php
+
+/**
+ * @file
+ * Contains Elastic search specific code.
+ */
+
+use Drupal\taxonomy\Entity\Term;
+use Elasticsearch\Common\Exceptions\NoNodesAvailableException;
+use Drupal\node\Entity\Node;
+use Elasticsearch\Common\Exceptions\Missing404Exception;
+
+/**
+ * Create Elastic Index.
+ */
+function recipes_elasticsearch_create_index() {
+
+  // Create an elasticsearch client.
+  $client = \Drupal::service('recipes_elasticsearch.elasticsearchclient')->getClient();
+
+  $index_name = 'recipes_index';
+
+  $irrelevant_ingredients = ['to', 'and', 'or', 'of', 'for', 'with', 'cup', 'cups',
+    '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'bunch', 'ounce', 'ounces',
+    'tablespoon', 'tablespoons', 'tablespons', 'tbsp', 'tbs', 'teaspoon', 'teaspoons',
+    'tsp', 'pinch', 'taste', 'none', 'warm', 'cold', 'whole', 'weight', 'clove',
+    'cloves', 'pound', 'can', 'cans', 'package', 'slices', 'chopped', 'stick',
+    'sticks', 'ground', 'large', 'fluid', 'fresh', 'dash', 'piece', 'pieces', 'box'];
+
+
+  try {
+    // Remove existing data.
+    $client->indices()->delete([
+      'index' => $index_name,
+    ]);
+  }
+  catch (Missing404Exception $e) {
+    // Don't do anything.
+  }
+  catch (NoNodesAvailableException $e) {
+    Drupal::logger('recipes_elasticsearch')->error('No elastic search nodes available');
+    return;
+  }
+  catch (Exception $e) {
+    Drupal::logger('recipes_elasticsearch')->error('Exception ' . $e->getMessage());
+    return;
+  }
+
+  // Real time search.
+  // https://www.elastic.co/guide/en/elasticsearch/reference/current/keyword.html
+  // Foreach content type in configuration
+  // construct mapping arr.
+  $config = \Drupal::config('recipes_elasticsearch.mapping')->get('content_type');
+
+  // https://www.elastic.co/guide/en/elasticsearch/guide/current/algorithmic-stemmers.html
+  // https://qbox.io/blog/an-introduction-to-ngrams-in-elasticsearch
+
+  // default ngram analyzer - to index the data
+  // default_search - standard analyzer to query the data
+
+  $client->indices()->create([
+    'index' => $index_name,
+    'body' => [
+      'settings' => [
+        'number_of_shards' => 1,
+        'number_of_replicas' => 0,
+        'analysis' => [
+          'filter' => [
+            'ngram_filter' => [
+              'type' => 'ngram',
+              'min_gram' => 3,
+              'max_gram' => 10,
+            ],
+            'ingradient_stop' => [
+              'type' => 'stop',
+              'stopwords' => $irrelevant_ingredients
+            ],
+          ],
+          'analyzer' => [
+            'filtered_ingredients' => [
+              'type' => 'standard',
+            ],
+            'ngram_filtered_ingredients' => [
+              'type' => 'custom',
+              'tokenizer' => 'standard',
+              'filter' => [
+                'lowercase',
+                'ingradient_stop',
+                'ngram_filter',
+              ],
+            ],
+            'default_search' => [
+              'type' => 'standard',
+            ],
+            'default' => [
+              'type' => 'custom',
+              'tokenizer' => 'standard',
+              'filter' => [
+                'lowercase',
+                'ngram_filter',
+              ],
+            ],
+          ],
+        ],
+      ],
+    ],
+  ]);
+
+  foreach ($config as $content_type => $config_per_type) {
+
+    recipes_elasticsearch_field_map_arr($client, $content_type, $index_name,
+        $config_per_type);
+  }
+}
+
+/**
+ * Map field type to it's elastic representation.
+ */
+function recipes_elasticsearch_field_map_type($field_type) {
+
+
+  if ($field_type == 'ingredient') {
+    $mapping = [
+      'properties' => [
+        'ingredients' => [
+          'type' => 'text',
+          'analyzer' => 'ngram_filtered_ingredients',
+          'search_analyzer' => 'filtered_ingredients',
+        ],
+        'keyword_ingredients' => ['type' => 'keyword'],
+      ],
+    ];
+  }
+  elseif ($field_type == 'number') {
+    $mapping = [
+      'type' => 'long',
+    ];
+  }
+  else {
+    // By default the normalizer adds a text field and a nested keyword field.
+    // so if no config is set the data is being stored and analyzed.
+    $mapping = [];
+  }
+
+  return $mapping;
+}
+
+/**
+ * Construct fields mapping per content type.
+ */
+function recipes_elasticsearch_field_map_arr($client, $content_type, $index_name, $config_per_type) {
+
+  $config_arr = [];
+  foreach ($config_per_type as $field_name => $field_type) {
+    $mapping = recipes_elasticsearch_field_map_type($field_type);
+    if (!empty($mapping)) {
+      $config_arr[$field_name] = $mapping;
+    }
+  }
+
+  // add entity specific fields
+  $merge_arr = [
+    'id' => ['type' => 'short', 'index' => FALSE],
+    'type' => ['type' => 'keyword'],
+    'entity_type' => ['type' => 'keyword', 'index' => FALSE],
+    'uuid' => ['type' => 'keyword', 'index' => FALSE],
+    'user' => [
+      'properties' => [
+        'name' => ['type' => 'text', 'index' => FALSE],
+        'id' => ['type' => 'short', 'index' => FALSE],
+      ],
+    ],
+  ] + $config_arr;
+
+  $client->indices()->putMapping([
+    'index' => $index_name,
+    'type' => $content_type,
+    'body' => [
+      $content_type => [
+        'properties' => $merge_arr,
+      ],
+    ],
+  ]);
+}
+
+/**
+ * Helper function to index an array of entity-ids.
+ */
+function recipes_elasticsearch_import_entities($entities) {
+  $count = 0;
+  $service = \Drupal::service('plugin.manager.elasticsearch_index.processor');
+  foreach ($entities as $id => $entity) {
+    try {
+      // Indexing happens here.
+      $service->indexEntity($entity);
+      $count++;
+    }
+    catch (\Exception $e) {
+      // Logs an error.
+      \Drupal::logger('recipes_elasticsearch')->error($e->getMessage());
+    }
+  }
+  return $count;
+}
+
+/**
+ * Index the content.
+ */
+function recipes_elasticsearch_import() {
+  // recipe and factorial_recipe
+  $query = \Drupal::entityQuery('node');
+  $query->condition('status', 1);
+  $nids = $query->execute();
+
+  recipes_elasticsearch_import_entities(Node::loadMultiple($nids));
+}

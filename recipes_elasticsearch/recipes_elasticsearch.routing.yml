@@ -1,0 +1,34 @@
+recipes_elasticsearch.elastic_search_controller_autocomplete:
+  path: '/elastic_recipes/suggestions'
+  defaults:
+    _controller: '\Drupal\recipes_elasticsearch\Controller\ElasticSearchController::autocomplete'
+    _title: 'elasticsearchSuggestions'
+  requirements:
+    _permission: 'search elastic content'
+
+
+recipes_elasticsearch.elastic_search_controller_debug:
+  path: '/elastic_recipes/debug'
+  defaults:
+    _controller: '\Drupal\recipes_elasticsearch\Controller\ElasticSearchController::debug'
+    _title: 'elasticsearchSuggestions'
+  requirements:
+    _permission: 'search elastic content'
+
+
+recipes_elasticsearch.elastic_search_controller_page:
+  path: '/search'
+  defaults:
+    _title: 'Search'
+    _controller: '\Drupal\recipes_elasticsearch\Controller\ElasticSearchController::page'
+  requirements:
+    _permission: 'search elastic content'
+
+recipes_elasticsearch.elastic_search_controller_result_page:
+  path: '/search/{term}'
+  defaults:
+    _controller: '\Drupal\recipes_elasticsearch\Controller\ElasticSearchController::page'
+    _title_callback: '\Drupal\recipes_elasticsearch\Controller\ElasticSearchController::getTitle'
+  requirements:
+    _permission: 'search elastic content'
+

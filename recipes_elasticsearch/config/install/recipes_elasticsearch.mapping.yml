@@ -1,0 +1,9 @@
+content_type:
+  recipe:
+    field_recipe_description:
+    field_recipe_yield: number
+    field_recipe_ingredients: ingredient
+  factorial_recipe:
+      field_fr_description:
+      field_fr_yield: number
+      field_fr_ingredients: ingredient

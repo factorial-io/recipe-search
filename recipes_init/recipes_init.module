@@ -1,0 +1,98 @@
+<?php
+
+/**
+ * @file
+ * Loosely modelled after the concepts found at
+ * http://dcycleproject.org/blog/44/what-site-deployment-module.
+ */
+
+use Drupal\node\Entity\Node;
+
+
+/**
+ *
+ */
+function _recipes_init_import() {
+
+  _delete_content();
+
+  $irrelevant_ingredients = ['to', 'and', 'or', 'of', 'for', 'with', 'cup', 'cups',
+    '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'bunch', 'ounce', 'ounces',
+    'tablespoon', 'tablespoons', 'tablespons', 'tbsp', 'tbs', 'teaspoon', 'teaspoons',
+    'tsp', 'pinch', 'taste', 'none', 'warm', 'cold', 'whole', 'weight', 'clove',
+    'cloves', 'pound', 'can', 'cans', 'package', 'slices', 'chopped', 'stick',
+    'sticks', 'ground', 'large', 'fluid', 'fresh', 'dash', 'piece', 'pieces', 'box'];
+
+
+
+  // Open the database file.
+  $file_content = file_get_contents(drupal_get_path('module', 'recipes_init') . '/openrecipes.json');
+
+  // The format is a bit weird, so we need to do some data wrangling.
+  $json_snippets = explode("\n", $file_content);
+
+  foreach ($json_snippets as $rid => $json_snippet) {
+    if ($recipe = json_decode($json_snippet, TRUE)) {
+
+      $title = $recipe['name'] ? $recipe['name'] : 'a recipe w/o title';
+      $ingredientsarr = explode(' ',
+          preg_replace('/[^\w]+/', ' ',
+            str_replace($irrelevant_ingredients, "",
+              strtolower($recipe['ingredients']))));
+      $ingredients = array_map(function($ingredient) {
+        return strlen($ingredient) > 3 ? substr($ingredient, 0, 254) : FALSE;
+      }, $ingredientsarr);
+
+
+
+
+      $description = substr($recipe['description'], 0, 254);
+
+      $yield = $recipe['recipeYield'];
+      // Flip a coin.
+      if (rand(0, 99) <= 50) {
+
+
+        $recipe = Node::create(['type' => 'factorial_recipe']);
+        $recipe->set('title', $title);
+        $recipe->set('field_fr_description', $description);
+        $recipe->set('field_fr_ingredients', $ingredients);
+        $recipe->set('field_fr_yield', $yield);
+        $recipe->enforceIsNew();
+        $recipe->save();
+
+      }
+      else {
+
+        $recipe = Node::create(['type' => 'recipe']);
+        $recipe->set('title', $title);
+        $recipe->set('field_recipe_description', $description);
+        $recipe->set('field_recipe_ingredients', $ingredients);
+        $recipe->set('field_recipe_yield', $yield);
+        $recipe->enforceIsNew();
+        $recipe->save();
+
+
+      }
+
+    }
+  }
+}
+
+/**
+ * Helper function to delete content.
+ */
+function _delete_content() {
+
+  // Delete nodes.
+  $result = \Drupal::entityQuery('node')
+    ->condition('type', 'recipe')
+    ->execute();
+  entity_delete_multiple('node', $result);
+
+  $result = \Drupal::entityQuery('node')
+    ->condition('type', 'factorial_recipe')
+    ->execute();
+  entity_delete_multiple('node', $result);
+
+}

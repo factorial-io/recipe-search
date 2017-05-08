@@ -1,0 +1,13 @@
+services:
+  recipes_elasticsearch.normalizer.node_normalizer:
+    class: Drupal\recipes_elasticsearch\Plugin\Normalizer\NodeNormalizer
+    tags:
+      - { name: normalizer, priority: 50 }
+    arguments: ['@entity.manager']
+  recipes_elasticsearch.normalizer.term_normalizer:
+    class: Drupal\recipes_elasticsearch\Plugin\Normalizer\TaxonomyTermNormalizer
+    tags:
+      - { name: normalizer, priority: 51 }
+    arguments: ['@entity.manager']
+  recipes_elasticsearch.elasticsearchclient:
+    class: Drupal\recipes_elasticsearch\Controller\ElasticSearchClient

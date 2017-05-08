@@ -1,0 +1,6 @@
+name: Recipes import
+description: "Helper module for recipe data import"
+package: recipes
+type: module
+core: 8.x
+

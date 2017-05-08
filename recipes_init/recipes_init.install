@@ -1,0 +1,16 @@
+<?php
+
+
+/**
+ * Implements hook_install().
+ */
+function recipes_init_install() {
+  // Assume:
+  // 1. a content type recipe exist
+  // and has the following fields
+  // recipes_elasticsearch.mapping.yml
+  // 2. a vocabulary ingredients exist
+
+
+}
+
